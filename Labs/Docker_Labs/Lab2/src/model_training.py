@@ -1,31 +1,35 @@
-import tensorflow as tf
+import joblib
 from sklearn import datasets
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 
-if __name__ == '__main__': 
-    # Load the Iris dataset
-    iris = datasets.load_iris()
-    X, y = iris.data, iris.target
+MODEL_PATH = 'wine_model.joblib'
+
+if __name__ == '__main__':
+    # Load the Wine dataset (13 chemical measurements, 3 cultivars)
+    wine = datasets.load_wine()
+    X, y = wine.data, wine.target
+    class_names = [name.replace('_', ' ').title() for name in wine.target_names]
 
     # Split the dataset into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y)
 
-    # Standardize features
-    sc = StandardScaler()
-    X_train = sc.fit_transform(X_train)
-    X_test = sc.transform(X_test)
-    # Build a simple TensorFlow model
-    
-    model = tf.keras.Sequential([
-        tf.keras.layers.Dense(8, input_shape=(4,), activation='relu'),
-        tf.keras.layers.Dense(3, activation='softmax')
-    ])
+    # Train a Random Forest (tree-based, so no feature scaling is needed)
+    model = RandomForestClassifier(n_estimators=200, max_depth=6, random_state=42)
+    model.fit(X_train, y_train)
 
-    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy',
-                  metrics=['accuracy'])
+    # Evaluate on the held-out test set
+    y_pred = model.predict(X_test)
+    print(f"Test accuracy: {accuracy_score(y_test, y_pred):.3f}")
+    print(classification_report(y_test, y_pred, target_names=class_names))
 
-    model.fit(X_train, y_train, epochs=50, validation_data=(X_test, y_test))
-
-    model.save('my_model.keras')
-    print("Model was trained and saved")
+    # Save the model together with the metadata the serving app needs
+    joblib.dump({
+        'model': model,
+        'feature_names': list(wine.feature_names),
+        'class_names': class_names,
+        'example': X_test[0].tolist(),
+    }, MODEL_PATH)
+    print(f"Model was trained and saved to {MODEL_PATH}")

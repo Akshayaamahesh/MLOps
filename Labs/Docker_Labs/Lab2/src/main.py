@@ -1,45 +1,48 @@
 from flask import Flask, request, jsonify, render_template
-import tensorflow as tf
+import joblib
 import numpy as np
 
-app = Flask(__name__, static_folder='statics')
+app = Flask(__name__)
 
-# URL of your Flask API for making predictions
-api_url = 'http://0.0.0.0:4000/predict'  # Update with the actual URL
+# Load the trained model and its metadata
+bundle = joblib.load('wine_model.joblib')
+model = bundle['model']
+feature_names = bundle['feature_names']
+class_names = bundle['class_names']
+example = bundle['example']
 
-# Load the TensorFlow model
-model = tf.keras.models.load_model('my_model.keras')  # Replace 'my_model.keras' with the actual model file
-class_labels = ['Setosa', 'Versicolor', 'Virginica']
+
+def pretty(name):
+    return name.replace('od280/od315_of_diluted_wines', 'OD280/OD315').replace('_', ' ').title()
 
 
 @app.route('/')
 def home():
-    return "Welcome to the Iris Classifier API!"
+    return "Welcome to the Wine Cultivar Classifier API!"
 
 @app.route('/predict', methods=['GET', 'POST'])
 def predict():
     if request.method == 'POST':
         try:
             data = request.form
-            sepal_length = float(data['sepal_length'])
-            sepal_width = float(data['sepal_width'])
-            petal_length = float(data['petal_length'])
-            petal_width = float(data['petal_width'])
+            input_data = np.array([[float(data[name]) for name in feature_names]])
 
             # Perform the prediction
-            input_data = np.array([sepal_length, sepal_width, petal_length, petal_width])[np.newaxis, ]
-            prediction = model.predict(input_data)
-            predicted_class = class_labels[np.argmax(prediction)]
+            probabilities = model.predict_proba(input_data)[0]
+            predicted_class = class_names[int(np.argmax(probabilities))]
 
-            # Return the predicted class in the response
-            # Use jsonify() instead of json.dumps() in Flask
-            return jsonify({"predicted_class": predicted_class})
-        except Exception as e:
-            return jsonify({"error": str(e)})
-    elif request.method == 'GET':
-        return render_template('predict.html')
-    else:
-        return "Unsupported HTTP method"
+            return jsonify({
+                "predicted_class": predicted_class,
+                "probabilities": {c: round(float(p), 3) for c, p in zip(class_names, probabilities)},
+            })
+        except KeyError as e:
+            return jsonify({"error": f"Missing feature: {e.args[0]}"}), 400
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+    return render_template(
+        'predict.html',
+        features=[(name, pretty(name), value) for name, value in zip(feature_names, example)],
+    )
 
 if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=4000)
+    app.run(host='0.0.0.0', port=4000)

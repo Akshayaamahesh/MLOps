@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neural Iris | AI Classifier</title>
+    <title>Wine Cultivar Classifier</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     
     <style>
@@ -61,7 +61,7 @@
             grid-template-columns: 1fr;
             gap: 2rem;
             width: 90%;
-            max-width: 450px;
+            max-width: 720px;
             position: relative;
         }
 
@@ -178,19 +178,34 @@
             box-shadow: 0 0 15px rgba(0, 242, 255, 0.2);
         }
 
-        .flower-card {
-            background: rgba(0,0,0,0.3);
-            border-radius: 16px;
-            padding: 10px;
-            border: 1px solid var(--glass-border);
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 0 1rem;
         }
 
-        .flower-image {
-            width: 100%;
-            max-height: 200px;
-            object-fit: cover;
-            border-radius: 12px;
-            display: block;
+        .prob-row {
+            display: grid;
+            grid-template-columns: 110px 1fr 56px;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+            text-align: left;
+        }
+
+        .prob-track {
+            height: 10px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+        }
+
+        .prob-fill {
+            height: 100%;
+            width: 0;
+            background: linear-gradient(to right, var(--secondary), var(--primary));
+            transition: width 0.6s ease;
         }
 
         @keyframes float {
@@ -218,27 +233,16 @@
 
     <div class="container">
         <div class="glass-card">
-            <h1>NEURAL IRIS</h1>
-            
+            <h1>WINE CULTIVAR</h1>
+
             <form id="predictionForm">
-                <div class="input-group">
-                    <label for="sepal_length">Sepal Length</label>
-                    <input type="number" id="sepal_length" step="0.01" placeholder="0.00" required>
-                </div>
-
-                <div class="input-group">
-                    <label for="sepal_width">Sepal Width</label>
-                    <input type="number" id="sepal_width" step="0.01" placeholder="0.00" required>
-                </div>
-
-                <div class="input-group">
-                    <label for="petal_length">Petal Length</label>
-                    <input type="number" id="petal_length" step="0.01" placeholder="0.00" required>
-                </div>
-
-                <div class="input-group">
-                    <label for="petal_width">Petal Width</label>
-                    <input type="number" id="petal_width" step="0.01" placeholder="0.00" required>
+                <div class="feature-grid">
+                {% for name, label, value in features %}
+                    <div class="input-group">
+                        <label for="f{{ loop.index }}">{{ label }}</label>
+                        <input type="number" id="f{{ loop.index }}" name="{{ name }}" step="any" value="{{ '%.3f'|format(value) }}" required>
+                    </div>
+                {% endfor %}
                 </div>
 
                 <button type="submit" class="submit-btn">
@@ -249,75 +253,50 @@
         </div>
 
         <div id="resultArea" class="glass-card result-container">
-            <div class="prediction-badge">CONFIDENCE: HIGH</div>
+            <div class="prediction-badge">RANDOM FOREST</div>
             <h2 id="predictedClass" style="margin: 10px 0; color: #fff; font-family: 'Orbitron', sans-serif;"></h2>
-            
-            <div class="flower-card">
-                <img src="" id="flowerImage" class="flower-image" alt="Iris Prediction"
-                data-setosa="{{ url_for('static', filename='setosa.jpeg') }}"
-                data-versicolor="{{ url_for('static', filename='versicolor.jpeg') }}"
-                data-virginica="{{ url_for('static', filename='virginica.jpeg') }}" />
-            </div>
+            <div id="probabilities"></div>
         </div>
     </div>
 
     <script>
         $(document).ready(function() {
             $('#predictionForm').on('submit', function(event) {
-                event.preventDefault(); 
-                
+                event.preventDefault();
+
                 // UI Loading State
                 var $btn = $('.submit-btn');
                 var $text = $('#btnText');
                 var $spinner = $('#btnSpinner');
-                
+
                 $text.hide();
                 $spinner.show();
                 $btn.css('opacity', '0.7');
 
-                var formData = {
-                    'sepal_length': $('#sepal_length').val(),
-                    'sepal_width': $('#sepal_width').val(),
-                    'petal_length': $('#petal_length').val(),
-                    'petal_width': $('#petal_width').val()
-                };
-
                 $.ajax({
                     type: 'POST',
                     url: '/predict',
-                    data: formData,
-                    dataType: 'json',
-                    encode: true
+                    data: $(this).serialize(),
+                    dataType: 'json'
                 }).done(function(data) {
-                    
-                    // Update Text
                     $('#predictedClass').text(data.predicted_class.toUpperCase());
-                    
-                    // Update Image
-                    var imageUrl = '';
-                    switch (data.predicted_class) {
-                        case 'Setosa':
-                            imageUrl = $('#flowerImage').data('setosa');
-                            break;
-                        case 'Versicolor':
-                            imageUrl = $('#flowerImage').data('versicolor');
-                            break;
-                        case 'Virginica':
-                            imageUrl = $('#flowerImage').data('virginica');
-                            break;
-                    }
-                    $('#flowerImage').attr('src', imageUrl);
 
-                    // Show Result with animation
+                    // Draw one probability bar per cultivar
+                    var $probs = $('#probabilities').empty();
+                    $.each(data.probabilities, function(name, p) {
+                        var $row = $('<div class="prob-row">')
+                            .append($('<span>').text(name))
+                            .append($('<div class="prob-track">').append('<div class="prob-fill">'))
+                            .append($('<span>').text((p * 100).toFixed(1) + '%'));
+                        $probs.append($row);
+                        setTimeout(function() { $row.find('.prob-fill').css('width', (p * 100) + '%'); }, 50);
+                    });
+
                     $('#resultArea').addClass('active');
-
-                    // Reset Button
-                    $text.show();
-                    $spinner.hide();
-                    $btn.css('opacity', '1');
-
-                }).fail(function(data) {
-                    alert('SYSTEM ERROR: Neural Link Disconnected.');
+                }).fail(function(xhr) {
+                    var msg = xhr.responseJSON && xhr.responseJSON.error ? xhr.responseJSON.error : 'Server unreachable.';
+                    alert('ERROR: ' + msg);
+                }).always(function() {
                     $text.show();
                     $spinner.hide();
                     $btn.css('opacity', '1');
